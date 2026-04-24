@@ -10,7 +10,6 @@ const CORS = {
 const TOUR_BASE = 'https://apis.data.go.kr/B551011/KorService2';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// contentTypeId 코드표
 const CONTENT_TYPES = {
   12: 'Tourist Spot',
   14: 'Cultural Facility',
@@ -32,23 +31,11 @@ export default {
     }
 
     try {
-      // ── Routes ──────────────────────────────────────────────
-      if (path === '/api/nearby' && request.method === 'GET') {
-        return await handleNearby(url, env);
-      }
-      if (path === '/api/search' && request.method === 'GET') {
-        return await handleSearch(url, env);
-      }
-      if (path === '/api/detail' && request.method === 'GET') {
-        return await handleDetail(url, env);
-      }
-      if (path === '/api/chat' && request.method === 'POST') {
-        return await handleChat(request, env);
-      }
-      if (path === '/api/health') {
-        return jsonResponse({ status: 'ok', time: new Date().toISOString() });
-      }
-
+      if (path === '/api/nearby' && request.method === 'GET') return await handleNearby(url, env);
+      if (path === '/api/search' && request.method === 'GET') return await handleSearch(url, env);
+      if (path === '/api/detail' && request.method === 'GET') return await handleDetail(url, env);
+      if (path === '/api/chat'   && request.method === 'POST') return await handleChat(request, env);
+      if (path === '/api/health') return jsonResponse({ status: 'ok', time: new Date().toISOString() });
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (e) {
       console.error(e);
@@ -62,23 +49,16 @@ async function handleNearby(url, env) {
   const lat = url.searchParams.get('lat');
   const lng = url.searchParams.get('lng');
   const radius = url.searchParams.get('radius') || '3000';
-  const type = url.searchParams.get('type') || ''; // contentTypeId 필터
+  const type = url.searchParams.get('type') || '';
   const numOfRows = url.searchParams.get('numOfRows') || '20';
 
   if (!lat || !lng) return jsonResponse({ error: 'lat, lng required' }, 400);
 
   const params = new URLSearchParams({
     serviceKey: env.TOUR_API_KEY,
-    mapX: lng,
-    mapY: lat,
-    radius,
-    
-    MobileOS: 'ETC',
-    MobileApp: 'KoreaTravelAI',
-    _type: 'json',
-    numOfRows,
-    pageNo: '1',
-    arrange: 'S', // 거리순
+    mapX: lng, mapY: lat, radius,
+    MobileOS: 'ETC', MobileApp: 'KoreaTravelAI',
+    _type: 'json', numOfRows, pageNo: '1', arrange: 'S',
   });
   if (type) params.set('contentTypeId', type);
 
@@ -86,10 +66,7 @@ async function handleNearby(url, env) {
   const data = await res.json();
   const items = extractItems(data);
 
-  const translated = await Promise.all(
-    items.map(item => translateItem(item, env))
-  );
-
+  const translated = await Promise.all(items.map(item => translateItem(item, env)));
   return jsonResponse({ items: translated, total: data?.response?.body?.totalCount || 0 });
 }
 
@@ -103,15 +80,9 @@ async function handleSearch(url, env) {
   if (!keyword) return jsonResponse({ error: 'keyword required' }, 400);
 
   const params = new URLSearchParams({
-    serviceKey: env.TOUR_API_KEY,
-    keyword,
-    
-    MobileOS: 'ETC',
-    MobileApp: 'KoreaTravelAI',
-    _type: 'json',
-    numOfRows,
-    pageNo: '1',
-    arrange: 'A',
+    serviceKey: env.TOUR_API_KEY, keyword,
+    MobileOS: 'ETC', MobileApp: 'KoreaTravelAI',
+    _type: 'json', numOfRows, pageNo: '1', arrange: 'A',
   });
   if (areaCode) params.set('areaCode', areaCode);
   if (type) params.set('contentTypeId', type);
@@ -120,10 +91,7 @@ async function handleSearch(url, env) {
   const data = await res.json();
   const items = extractItems(data);
 
-  const translated = await Promise.all(
-    items.map(item => translateItem(item, env))
-  );
-
+  const translated = await Promise.all(items.map(item => translateItem(item, env)));
   return jsonResponse({ items: translated, total: data?.response?.body?.totalCount || 0 });
 }
 
@@ -135,14 +103,10 @@ async function handleDetail(url, env) {
 
   const base = {
     serviceKey: env.TOUR_API_KEY,
-    MobileOS: 'ETC',
-    MobileApp: 'KoreaTravelAI',
-    _type: 'json',
-    contentId,
-    contentTypeId,
+    MobileOS: 'ETC', MobileApp: 'KoreaTravelAI',
+    _type: 'json', contentId, contentTypeId,
   };
 
-  // 병렬로 공통정보 + 소개정보 + 이미지 가져오기
   const [commonRes, introRes, imageRes] = await Promise.all([
     fetch(`${TOUR_BASE}/detailCommon2?${new URLSearchParams({ ...base, defaultYN: 'Y', addrinfoYN: 'Y', overviewYN: 'Y', mapinfoYN: 'Y', firstImageYN: 'Y' })}`),
     fetch(`${TOUR_BASE}/detailIntro2?${new URLSearchParams(base)}`),
@@ -157,52 +121,54 @@ async function handleDetail(url, env) {
   const intro = extractItems(introData)[0] || {};
   const images = extractItems(imageData);
 
-  // 번역 캐시 키
   const cacheKey = `detail:${contentId}`;
   const cached = await getCache(env, cacheKey);
   if (cached) {
     return jsonResponse({ ...cached, images: images.map(i => i.originimgurl) });
   }
 
-  // 번역할 텍스트 묶어서 한 번에 Gemini 호출
+  // Extract type-specific intro fields
+  const introFields = extractIntroFields(intro, contentTypeId);
+
   const toTranslate = {
     title: common.title || '',
     overview: common.overview || '',
     addr: common.addr1 || '',
-    opentime: intro.usetimeculture || intro.usetime || intro.playtime || '',
-    restdate: intro.restdate || intro.closeday || '',
-    usefee: intro.usefee || intro.usetimefestival || '',
-    parking: intro.parking || '',
+    ...introFields,
   };
 
   const translated = await geminiTranslateObject(toTranslate, env);
+
+  // Build translated typeInfo
+  const typeInfo = {};
+  for (const k of Object.keys(introFields)) {
+    const v = translated[k] || introFields[k];
+    if (v) typeInfo[k] = v;
+  }
 
   const result = {
     contentId,
     contentTypeId,
     typeName: CONTENT_TYPES[contentTypeId] || 'Attraction',
     title: translated.title || common.title || '',
-    overview: translated.overview,
+    overview: translated.overview || common.overview || '',
     address: translated.addr || common.addr1,
     mapx: common.mapx,
     mapy: common.mapy,
     tel: common.tel,
     homepage: common.homepage,
     firstImage: common.firstimage,
-    opentime: translated.opentime,
-    restdate: translated.restdate,
-    usefee: translated.usefee,
-    parking: translated.parking,
+    typeInfo,
   };
 
-  await setCache(env, cacheKey, result, 60 * 60 * 24 * 30); // 30일
+  await setCache(env, cacheKey, result, 60 * 60 * 24 * 30);
   return jsonResponse({ ...result, images: images.map(i => i.originimgurl) });
 }
 
-// ── 4. AI 챗봇 (Gemini 2.5 Flash) ───────────────────────────────
+// ── 4. AI 챗봇 ───────────────────────────────────────────────────
 async function handleChat(request, env) {
   const body = await request.json();
-  const { messages, location } = body; // messages: [{role, content}]
+  const { messages, location } = body;
 
   if (!messages || !Array.isArray(messages)) {
     return jsonResponse({ error: 'messages array required' }, 400);
@@ -212,7 +178,7 @@ async function handleChat(request, env) {
     ? `User's current location: ${location.lat}, ${location.lng} (near ${location.name || 'Korea'})`
     : 'Location not provided';
 
-  const systemPrompt = `You are a friendly and knowledgeable Korea travel guide AI assistant. 
+  const systemPrompt = `You are a friendly and knowledgeable Korea travel guide AI assistant.
 Your goal is to help foreign tourists discover amazing places in Korea.
 
 ${locationContext}
@@ -221,53 +187,36 @@ Guidelines:
 - Always respond in English
 - Be enthusiastic but concise
 - Suggest specific places with brief descriptions
-- When recommending places, mention distance if location is known
 - Include practical tips (best time to visit, how to get there, what to try)
-- If user asks about food, mention must-try dishes at that location
 - Keep responses under 200 words unless asked for more detail
-- Use emojis sparingly for friendliness
-
-When the user wants to find places, extract:
-1. Type of place (food/culture/nature/shopping/entertainment)
-2. Specific preferences mentioned
-3. Any location preferences
-
-Respond naturally and helpfully.`;
+- Use emojis sparingly for friendliness`;
 
   const geminiMessages = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }],
   }));
 
-  const geminiBody = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: geminiMessages,
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 500,
-    },
-  };
-
-  const model = 'gemini-3-flash-preview';
+  const model = 'gemini-2.0-flash';
   const res = await fetch(
     `${GEMINI_BASE}/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: geminiMessages,
+        generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+      }),
     }
   );
 
   const data = await res.json();
-
   if (!res.ok) {
     console.error('Gemini error:', JSON.stringify(data));
     return jsonResponse({ error: 'AI service error', detail: data?.error?.message }, 500);
   }
 
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  // 챗봇 응답에서 장소 추천 파싱 (선택적)
   return jsonResponse({ reply: text });
 }
 
@@ -288,11 +237,8 @@ async function translateItem(item, env) {
     typeName: CONTENT_TYPES[item.contenttypeid] || 'Attraction',
     title: translated.title || item.title,
     address: translated.addr || item.addr1,
-    mapx: item.mapx,
-    mapy: item.mapy,
-    dist: item.dist,
-    firstImage: item.firstimage,
-    tel: item.tel,
+    mapx: item.mapx, mapy: item.mapy,
+    dist: item.dist, firstImage: item.firstimage, tel: item.tel,
   };
 
   await setCache(env, cacheKey, result, 60 * 60 * 24 * 30);
@@ -300,17 +246,17 @@ async function translateItem(item, env) {
 }
 
 async function geminiTranslateObject(obj, env) {
-  const nonEmpty = Object.entries(obj).filter(([, v]) => v && v.trim());
+  const nonEmpty = Object.entries(obj).filter(([, v]) => v && String(v).trim());
   if (nonEmpty.length === 0) return obj;
 
-  const prompt = `Translate the following Korean tourism information to natural English. 
-Return ONLY a JSON object with the same keys. Keep proper nouns (place names) as-is or add English name in parentheses.
+  const prompt = `Translate the following Korean tourism information to natural English.
+Return ONLY a JSON object with the same keys. Keep proper nouns as-is or add English name in parentheses.
 Do not add any explanation.
 
 Input:
 ${JSON.stringify(Object.fromEntries(nonEmpty))}`;
 
-  const model = 'gemini-3-flash-preview';
+  const model = 'gemini-2.0-flash';
   const res = await fetch(
     `${GEMINI_BASE}/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
     {
@@ -318,7 +264,7 @@ ${JSON.stringify(Object.fromEntries(nonEmpty))}`;
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+        generationConfig: { temperature: 0.1, maxOutputTokens: 800 },
       }),
     }
   );
@@ -330,16 +276,79 @@ ${JSON.stringify(Object.fromEntries(nonEmpty))}`;
     const clean = text.replace(/```json\n?|\n?```/g, '').trim();
     return { ...obj, ...JSON.parse(clean) };
   } catch {
-    return obj; // 파싱 실패시 원문 반환
+    return obj;
   }
+}
+
+// ── Intro 타입별 파싱 ─────────────────────────────────────────────
+function stripHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractIntroFields(intro, typeId) {
+  const tid = String(typeId);
+  const raw = {};
+
+  if (tid === '12') {
+    if (intro.usetime)        raw.usetime        = intro.usetime;
+    if (intro.restdate)       raw.restdate       = intro.restdate;
+    if (intro.parking)        raw.parking        = intro.parking;
+    if (intro.chkpet)         raw.chkpet         = intro.chkpet;
+    if (intro.chkbabycarriage) raw.chkbabycarriage = intro.chkbabycarriage;
+    if (intro.chkcreditcard)  raw.chkcreditcard  = intro.chkcreditcard;
+    if (intro.accomcount)     raw.accomcount     = intro.accomcount;
+  } else if (tid === '14') {
+    if (intro.usetimeculture)       raw.usetime        = intro.usetimeculture;
+    if (intro.restdateculture)      raw.restdate       = intro.restdateculture;
+    if (intro.usefee)               raw.usefee         = intro.usefee;
+    if (intro.parking)              raw.parking        = intro.parking;
+    if (intro.chkbabycarriageculture) raw.chkbabycarriage = intro.chkbabycarriageculture;
+    if (intro.chkpetculture)        raw.chkpet         = intro.chkpetculture;
+  } else if (tid === '15') {
+    if (intro.eventstartdate)  raw.eventstartdate = intro.eventstartdate;
+    if (intro.eventenddate)    raw.eventenddate   = intro.eventenddate;
+    if (intro.eventplace)      raw.eventplace     = intro.eventplace;
+    if (intro.usetimefestival) raw.usetime        = intro.usetimefestival;
+    if (intro.playtime)        raw.playtime       = intro.playtime;
+    if (intro.program)         raw.program        = intro.program;
+  } else if (tid === '32') {
+    if (intro.checkintime)      raw.checkintime  = intro.checkintime;
+    if (intro.checkouttime)     raw.checkouttime = intro.checkouttime;
+    if (intro.parkinglodging)   raw.parking      = intro.parkinglodging;
+    if (intro.breakfast)        raw.breakfast    = intro.breakfast;
+    if (intro.roomcount)        raw.roomcount    = intro.roomcount;
+    if (intro.reservationlodging) raw.reservation = intro.reservationlodging;
+  } else if (tid === '38') {
+    if (intro.opentimeshopping)    raw.usetime    = intro.opentimeshopping;
+    if (intro.restdateshopping)    raw.restdate   = intro.restdateshopping;
+    if (intro.parkingshopping)     raw.parking    = intro.parkingshopping;
+    if (intro.chkcreditcardshopping) raw.creditcard = intro.chkcreditcardshopping;
+    if (intro.saleitem)            raw.saleitem   = intro.saleitem;
+  } else if (tid === '39') {
+    if (intro.opentimefood)      raw.usetime     = intro.opentimefood;
+    if (intro.restdatefood)      raw.restdate    = intro.restdatefood;
+    if (intro.parkingfood)       raw.parking     = intro.parkingfood;
+    if (intro.chkcreditcardfood) raw.creditcard  = intro.chkcreditcardfood;
+    if (intro.firstmenu)         raw.firstmenu   = intro.firstmenu;
+    if (intro.seat)              raw.seat        = intro.seat;
+    if (intro.takeoutpossible)   raw.takeout     = intro.takeoutpossible;
+    if (intro.reservationfood)   raw.reservation = intro.reservationfood;
+  }
+
+  const result = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const s = stripHtml(v);
+    if (s) result[k] = s;
+  }
+  return result;
 }
 
 // ── KV 캐시 헬퍼 ─────────────────────────────────────────────────
 async function getCache(env, key) {
   try {
     if (!env.TRANSLATION_CACHE) return null;
-    const val = await env.TRANSLATION_CACHE.get(key, 'json');
-    return val;
+    return await env.TRANSLATION_CACHE.get(key, 'json');
   } catch { return null; }
 }
 
