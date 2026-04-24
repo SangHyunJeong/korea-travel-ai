@@ -1,0 +1,13 @@
+# Wrangler cache (account info, tokens)
+.wrangler/
+
+# Local env files
+.env
+.env.local
+.dev.vars
+
+# Node modules
+node_modules/
+
+# Claude settings
+.claude/

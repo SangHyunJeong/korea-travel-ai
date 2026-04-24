@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Navi Korea — Your AI Travel Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface2: #1a1a26;
+  --border: rgba(255,255,255,0.08);
+  --accent: #ff4d6d;
+  --accent2: #7b61ff;
+  --accent3: #00d4aa;
+  --text: #f0f0f5;
+  --text2: #8888aa;
+  --text3: #55556a;
+  --card-bg: rgba(255,255,255,0.03);
+  --glow: rgba(255,77,109,0.15);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── BACKGROUND ─────────────────────────────────── */
+.bg-mesh {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 20%, rgba(123,97,255,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 80% 80%, rgba(255,77,109,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(0,212,170,0.04) 0%, transparent 60%);
+}
+
+/* ─── LAYOUT ─────────────────────────────────────── */
+.app { position: relative; z-index: 1; max-width: 420px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ─── HEADER ─────────────────────────────────────── */
+header {
+  padding: 20px 20px 0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.logo span { color: var(--accent3); -webkit-text-fill-color: var(--accent3); }
+.location-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 6px 12px;
+  font-size: 12px; color: var(--text2); cursor: pointer;
+  transition: all 0.2s;
+}
+.location-pill:hover { border-color: var(--accent); color: var(--text); }
+.location-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent3);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+
+/* ─── HERO / SEARCH ──────────────────────────────── */
+.hero { padding: 24px 20px 16px; }
+.hero-title {
+  font-size: 13px; font-weight: 400; color: var(--text2);
+  letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px;
+}
+.search-wrap {
+  position: relative; margin-bottom: 16px;
+}
+.search-input {
+  width: 100%; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 50px 14px 16px;
+  font-family: 'DM Sans', sans-serif; font-size: 15px; color: var(--text);
+  outline: none; transition: all 0.2s;
+}
+.search-input::placeholder { color: var(--text3); }
+.search-input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(123,97,255,0.1); }
+.search-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; border-radius: 10px; width: 36px; height: 36px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.2s;
+}
+.search-btn:hover { opacity: 0.85; }
+.search-btn svg { width: 16px; height: 16px; fill: white; }
+
+/* ─── FILTER CHIPS ───────────────────────────────── */
+.filter-row {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 7px 14px;
+  font-size: 12px; font-weight: 500; color: var(--text2);
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 5px;
+}
+.chip:hover { border-color: var(--accent2); color: var(--text); }
+.chip.active {
+  background: linear-gradient(135deg, rgba(255,77,109,0.15), rgba(123,97,255,0.15));
+  border-color: var(--accent); color: var(--text);
+}
+.chip-icon { font-size: 14px; }
+
+/* ─── TABS ───────────────────────────────────────── */
+.tabs {
+  display: flex; gap: 0; padding: 0 20px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  flex: 1; padding: 10px 0; text-align: center;
+  font-size: 13px; font-weight: 500; color: var(--text3);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all 0.2s; margin-bottom: -1px;
+}
+.tab.active { color: var(--text); border-color: var(--accent); }
+
+/* ─── CONTENT AREA ───────────────────────────────── */
+.content { flex: 1; padding: 0 20px; overflow-y: auto; padding-bottom: 100px; }
+
+/* ─── CARDS ──────────────────────────────────────── */
+.cards-grid { display: flex; flex-direction: column; gap: 12px; }
+
+.card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 16px; overflow: hidden; cursor: pointer;
+  transition: all 0.25s; position: relative;
+}
+.card:hover { border-color: rgba(255,255,255,0.15); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+.card:active { transform: translateY(0); }
+
+.card-img {
+  width: 100%; height: 160px; object-fit: cover;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+}
+.card-img.no-img {
+  background: linear-gradient(135deg, var(--surface2), var(--surface));
+  font-size: 40px;
+}
+.card-img img { width: 100%; height: 100%; object-fit: cover; }
+
+.card-body { padding: 14px; }
+.card-type {
+  font-size: 10px; font-weight: 500; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 4px;
+  font-family: 'DM Mono', monospace;
+}
+.card-title { font-size: 16px; font-weight: 500; margin-bottom: 6px; line-height: 1.3; }
+.card-addr { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 4px; }
+.card-dist {
+  position: absolute; top: 12px; right: 12px;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+  border-radius: 8px; padding: 4px 8px;
+  font-size: 11px; font-family: 'DM Mono', monospace; color: var(--accent3);
+}
+
+/* ─── LOADING STATE ──────────────────────────────── */
+.skeleton { animation: shimmer 1.5s infinite; }
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-card {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--surface) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 16px; height: 220px;
+}
+
+/* ─── EMPTY STATE ────────────────────────────────── */
+.empty {
+  text-align: center; padding: 60px 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.empty-icon { font-size: 48px; opacity: 0.4; }
+.empty-title { font-size: 16px; font-weight: 500; color: var(--text2); }
+.empty-sub { font-size: 13px; color: var(--text3); }
+
+/* ─── CHAT TAB ───────────────────────────────────── */
+.chat-wrap {
+  display: flex; flex-direction: column;
+}
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 8px 0;
+  display: flex; flex-direction: column; gap: 12px;
+  scrollbar-width: none;
+}
+.chat-messages::-webkit-scrollbar { display: none; }
+
+.msg { display: flex; gap: 10px; animation: fadeUp 0.3s ease; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+.msg.user { flex-direction: row-reverse; }
+.msg-avatar {
+  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.msg.ai .msg-avatar { background: linear-gradient(135deg, var(--accent2), var(--accent)); }
+.msg.user .msg-avatar { background: var(--surface2); border: 1px solid var(--border); }
+
+.msg-bubble {
+  max-width: 80%; padding: 12px 14px; border-radius: 14px;
+  font-size: 14px; line-height: 1.55;
+}
+.msg.ai .msg-bubble {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-top-left-radius: 4px;
+}
+.msg.user .msg-bubble {
+  background: linear-gradient(135deg, rgba(255,77,109,0.2), rgba(123,97,255,0.2));
+  border: 1px solid rgba(123,97,255,0.3);
+  border-top-right-radius: 4px;
+}
+
+.chat-input-wrap {
+  display: flex; gap: 8px; padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+.chat-input {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text);
+  outline: none; resize: none; max-height: 100px;
+  transition: border-color 0.2s;
+}
+.chat-input:focus { border-color: var(--accent2); }
+.chat-input::placeholder { color: var(--text3); }
+.chat-send {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; border-radius: 12px; width: 44px; flex-shrink: 0;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.2s;
+}
+.chat-send:hover { opacity: 0.85; }
+.chat-send svg { width: 18px; height: 18px; fill: white; }
+.chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.typing-dot { display: inline-block; animation: blink 1s infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%,100%{opacity:0.2} 50%{opacity:1} }
+
+/* ─── DETAIL MODAL ───────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(8px); z-index: 100;
+  display: flex; align-items: flex-end;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+.modal {
+  background: var(--surface); border-radius: 24px 24px 0 0;
+  width: 100%; max-height: 85vh; overflow-y: auto;
+  animation: slideUp 0.3s ease;
+  scrollbar-width: none;
+}
+.modal::-webkit-scrollbar { display: none; }
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+
+.modal-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 14px auto 0; }
+.modal-img { width: 100%; height: 220px; object-fit: cover; }
+.modal-img.placeholder {
+  background: linear-gradient(135deg, var(--surface2), var(--bg));
+  display: flex; align-items: center; justify-content: center; font-size: 60px;
+}
+.modal-body { padding: 20px; }
+.modal-type { font-size: 10px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; font-family: 'DM Mono', monospace; }
+.modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 1px; margin-bottom: 12px; line-height: 1.1; }
+.modal-close {
+  position: absolute; top: 20px; right: 20px;
+  background: rgba(0,0,0,0.5); border: none; border-radius: 50%;
+  width: 32px; height: 32px; cursor: pointer; color: white; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.info-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.info-label { font-size: 11px; color: var(--text3); margin-bottom: 2px; font-family: 'DM Mono', monospace; text-transform: uppercase; letter-spacing: 0.5px; }
+.info-val { color: var(--text2); line-height: 1.5; }
+
+.overview-text {
+  font-size: 14px; color: var(--text2); line-height: 1.7;
+  margin: 16px 0; padding: 14px; background: var(--card-bg);
+  border: 1px solid var(--border); border-radius: 12px;
+}
+
+.img-gallery { display: flex; gap: 8px; overflow-x: auto; margin: 12px 0; scrollbar-width: none; }
+.img-gallery::-webkit-scrollbar { display: none; }
+.gallery-img { width: 100px; height: 80px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+
+/* ─── NEARBY BTN ─────────────────────────────────── */
+.nearby-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(135deg, rgba(0,212,170,0.15), rgba(123,97,255,0.15));
+  border: 1px solid rgba(0,212,170,0.3);
+  border-radius: 12px; padding: 12px 16px;
+  color: var(--accent3); font-size: 14px; font-weight: 500;
+  cursor: pointer; width: 100%; margin-bottom: 16px;
+  transition: all 0.2s;
+}
+.nearby-btn:hover { background: rgba(0,212,170,0.2); }
+
+/* ─── SECTION HEADER ─────────────────────────────── */
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.section-title { font-size: 12px; font-weight: 500; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; font-family: 'DM Mono', monospace; }
+.section-count { font-size: 12px; color: var(--text3); }
+
+/* ─── TOAST ──────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 16px; font-size: 13px; color: var(--text);
+  z-index: 200; animation: fadeUp 0.3s ease;
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+<div class="bg-mesh"></div>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">NAVI<span>KR</span></div>
+    <div class="location-pill" onclick="requestLocation()">
+      <div class="dot"></div>
+      <span id="location-text">Locating...</span>
+    </div>
+  </header>
+
+  <!-- HERO / SEARCH -->
+  <div class="hero">
+    <div class="hero-title">Discover Korea</div>
+    <div class="search-wrap">
+      <input class="search-input" id="search-input" type="text"
+        placeholder="Search places, food, culture..."
+        onkeydown="if(event.key==='Enter') doSearch()">
+      <button class="search-btn" onclick="doSearch()">
+        <svg viewBox="0 0 24 24"><path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <!-- Filter chips -->
+    <div class="filter-row" id="filter-row">
+      <div class="chip active" data-type="" onclick="setFilter(this, '')"><span class="chip-icon">🗺️</span>All</div>
+      <div class="chip" data-type="12" onclick="setFilter(this, '12')"><span class="chip-icon">🏯</span>Attractions</div>
+      <div class="chip" data-type="39" onclick="setFilter(this, '39')"><span class="chip-icon">🍜</span>Food</div>
+      <div class="chip" data-type="14" onclick="setFilter(this, '14')"><span class="chip-icon">🎭</span>Culture</div>
+      <div class="chip" data-type="38" onclick="setFilter(this, '38')"><span class="chip-icon">🛍️</span>Shopping</div>
+      <div class="chip" data-type="15" onclick="setFilter(this, '15')"><span class="chip-icon">🎉</span>Events</div>
+      <div class="chip" data-type="28" onclick="setFilter(this, '28')"><span class="chip-icon">⛷️</span>Activities</div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('explore')">Explore</div>
+    <div class="tab" onclick="switchTab('chat')">AI Guide</div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- EXPLORE TAB -->
+    <div id="tab-explore">
+      <button class="nearby-btn" onclick="loadNearby()">
+        <span>📍</span>
+        <span>Find places near me</span>
+      </button>
+      <div class="section-header">
+        <span class="section-title" id="results-label">Nearby</span>
+        <span class="section-count" id="results-count"></span>
+      </div>
+      <div class="cards-grid" id="cards-grid">
+        <!-- Skeleton loaders -->
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+    </div>
+
+    <!-- CHAT TAB -->
+    <div id="tab-chat" style="display:none">
+      <div class="chat-wrap">
+        <div class="chat-messages" id="chat-messages">
+          <div class="msg ai">
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-bubble">
+              안녕하세요! I'm your Korea travel guide 🇰🇷<br><br>
+              Ask me anything — where to eat, hidden gems, how to get around, or what to do near you. I'm here to help you explore Korea!
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-wrap">
+          <textarea class="chat-input" id="chat-input" rows="1"
+            placeholder="Ask me about Korea..."
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+            oninput="autoResize(this)"></textarea>
+          <button class="chat-send" id="chat-send-btn" onclick="sendChat()">
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal-overlay" id="modal-overlay" style="display:none" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────
+// 배포 후 실제 Worker URL로 교체
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:8787'
+  : 'https://korea-travel-ai-worker.jsh900118.workers.dev';
+
+// ─── STATE ───────────────────────────────────────────────────────
+let userLocation = null;
+let activeFilter = '';
+let chatHistory = [];
+let currentTab = 'explore';
+
+// ─── LOCATION ────────────────────────────────────────────────────
+function requestLocation() {
+  if (!navigator.geolocation) {
+    setLocationText('Seoul, Korea');
+    userLocation = { lat: 37.5665, lng: 126.9780, name: 'Seoul' };
+    loadNearby();
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setLocationText('Near you');
+      loadNearby();
+    },
+    () => {
+      // 위치 거부시 남산 기본값
+      userLocation = { lat: 37.5512, lng: 126.9882, name: 'Namsan' };
+      setLocationText('Namsan, Seoul');
+      loadNearby();
+    }
+  );
+}
+
+function setLocationText(text) {
+  document.getElementById('location-text').textContent = text;
+}
+
+// ─── LOAD NEARBY ─────────────────────────────────────────────────
+async function loadNearby() {
+  if (!userLocation) { requestLocation(); return; }
+  showSkeletons();
+  document.getElementById('results-label').textContent = 'Nearby';
+
+  try {
+    const params = new URLSearchParams({
+      lat: userLocation.lat,
+      lng: userLocation.lng,
+      radius: 3000,
+      numOfRows: 20,
+    });
+    if (activeFilter) params.set('type', activeFilter);
+
+    const res = await fetch(`${API_BASE}/api/nearby?${params}`);
+    const data = await res.json();
+    renderCards(data.items || []);
+    document.getElementById('results-count').textContent = data.total ? `${data.total} found` : '';
+  } catch (e) {
+    showError('Could not load nearby places');
+  }
+}
+
+// ─── SEARCH ──────────────────────────────────────────────────────
+async function doSearch() {
+  const keyword = document.getElementById('search-input').value.trim();
+  if (!keyword) { loadNearby(); return; }
+  showSkeletons();
+  document.getElementById('results-label').textContent = `"${keyword}"`;
+
+  try {
+    const params = new URLSearchParams({ keyword, numOfRows: 20 });
+    if (activeFilter) params.set('type', activeFilter);
+
+    const res = await fetch(`${API_BASE}/api/search?${params}`);
+    const data = await res.json();
+    renderCards(data.items || []);
+    document.getElementById('results-count').textContent = data.total ? `${data.total} results` : '';
+  } catch (e) {
+    showError('Search failed');
+  }
+}
+
+// ─── FILTER ──────────────────────────────────────────────────────
+function setFilter(el, type) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  activeFilter = type;
+  const keyword = document.getElementById('search-input').value.trim();
+  if (keyword) doSearch(); else loadNearby();
+}
+
+// ─── RENDER CARDS ────────────────────────────────────────────────
+const TYPE_EMOJI = {
+  '12': '🏯', '14': '🎭', '15': '🎉', '25': '🗺️',
+  '28': '⛷️', '32': '🏨', '38': '🛍️', '39': '🍜',
+};
+
+function renderCards(items) {
+  const grid = document.getElementById('cards-grid');
+  if (!items.length) {
+    grid.innerHTML = `<div class="empty">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-title">No places found</div>
+      <div class="empty-sub">Try a different search or filter</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = items.map(item => {
+    const emoji = TYPE_EMOJI[item.contentTypeId] || '📍';
+    const dist = item.dist ? `${(item.dist/1000).toFixed(1)}km` : '';
+    const imgHtml = item.firstImage
+      ? `<div class="card-img"><img src="${item.firstImage}" alt="${item.title}" loading="lazy" onerror="this.parentElement.innerHTML='<div style=font-size:40px;text-align:center;padding:60px>${emoji}</div>'"></div>`
+      : `<div class="card-img no-img">${emoji}</div>`;
+    return `<div class="card" onclick="openDetail('${item.contentId}','${item.contentTypeId}')">
+      ${imgHtml}
+      ${dist ? `<div class="card-dist">${dist}</div>` : ''}
+      <div class="card-body">
+        <div class="card-type">${item.typeName || ''}</div>
+        <div class="card-title">${item.title}</div>
+        <div class="card-addr">📍 ${item.address || ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── DETAIL MODAL ────────────────────────────────────────────────
+async function openDetail(contentId, contentTypeId) {
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  overlay.style.display = 'flex';
+  content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">
+    <div style="font-size:32px;margin-bottom:12px">⏳</div>Loading...</div>`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/detail?contentId=${contentId}&contentTypeId=${contentTypeId}`);
+    const d = await res.json();
+    const emoji = TYPE_EMOJI[d.contentTypeId] || '📍';
+
+    const imgHtml = d.firstImage
+      ? `<img class="modal-img" src="${d.firstImage}" alt="${d.title}">`
+      : `<div class="modal-img placeholder">${emoji}</div>`;
+
+    const galleryHtml = d.images && d.images.length > 1
+      ? `<div class="img-gallery">${d.images.slice(1).map(u => `<img class="gallery-img" src="${u}" loading="lazy">`).join('')}</div>`
+      : '';
+
+    const infoRows = [
+      d.address ? `<div class="info-row"><span class="info-icon">📍</span><div><div class="info-label">Address</div><div class="info-val">${d.address}</div></div></div>` : '',
+      d.opentime ? `<div class="info-row"><span class="info-icon">🕐</span><div><div class="info-label">Hours</div><div class="info-val">${d.opentime}</div></div></div>` : '',
+      d.restdate ? `<div class="info-row"><span class="info-icon">🔒</span><div><div class="info-label">Closed</div><div class="info-val">${d.restdate}</div></div></div>` : '',
+      d.usefee ? `<div class="info-row"><span class="info-icon">💰</span><div><div class="info-label">Admission</div><div class="info-val">${d.usefee}</div></div></div>` : '',
+      d.tel ? `<div class="info-row"><span class="info-icon">📞</span><div><div class="info-label">Phone</div><div class="info-val">${d.tel}</div></div></div>` : '',
+    ].filter(Boolean).join('');
+
+    content.innerHTML = `
+      <button class="modal-close" onclick="closeModal()" style="position:sticky;float:right;margin:8px">✕</button>
+      ${imgHtml}
+      <div class="modal-body">
+        <div class="modal-type">${d.typeName || ''}</div>
+        <div class="modal-title">${d.title || '(No title)'}</div>
+        ${d.overview ? `<div class="overview-text">${d.overview}</div>` : ''}
+        ${galleryHtml}
+        ${infoRows}
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">Failed to load details</div>`;
+  }
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').style.display = 'none';
+  }
+}
+
+// ─── CHAT ────────────────────────────────────────────────────────
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  autoResize(input);
+  addMsg('user', text);
+  chatHistory.push({ role: 'user', content: text });
+
+  const btn = document.getElementById('chat-send-btn');
+  btn.disabled = true;
+  addTyping();
+
+  try {
+    const res = await fetch(`${API_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: chatHistory,
+        location: userLocation,
+      }),
+    });
+    const data = await res.json();
+    removeTyping();
+
+    const reply = data.reply || 'Sorry, I could not respond right now.';
+    addMsg('ai', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+
+    // 히스토리 최대 20개 유지
+    if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+  } catch (e) {
+    removeTyping();
+    addMsg('ai', 'Connection error. Please try again.');
+  }
+  btn.disabled = false;
+}
+
+function addMsg(role, text) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = `msg ${role === 'user' ? 'user' : 'ai'}`;
+  div.innerHTML = `
+    <div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div>
+    <div class="msg-bubble">${text.replace(/\n/g, '<br>')}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addTyping() {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.id = 'typing-indicator';
+  div.className = 'msg ai';
+  div.innerHTML = `<div class="msg-avatar">🤖</div>
+    <div class="msg-bubble"><span class="typing-dot">●</span><span class="typing-dot">●</span><span class="typing-dot">●</span></div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  document.getElementById('typing-indicator')?.remove();
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', ['explore','chat'][i] === tab);
+  });
+
+  const content = document.querySelector('.content');
+  content.scrollTop = 0;
+
+  if (tab === 'chat') {
+    content.style.paddingBottom = '0';
+    content.style.overflowY = 'hidden';
+    document.getElementById('tab-explore').style.display = 'none';
+    document.getElementById('tab-chat').style.display = '';
+    const rect = content.getBoundingClientRect();
+    document.querySelector('.chat-wrap').style.height = (window.innerHeight - rect.top) + 'px';
+    const msgs = document.getElementById('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  } else {
+    content.style.paddingBottom = '';
+    content.style.overflowY = '';
+    document.querySelector('.chat-wrap').style.height = '';
+    document.getElementById('tab-explore').style.display = '';
+    document.getElementById('tab-chat').style.display = 'none';
+  }
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────
+function showSkeletons() {
+  document.getElementById('cards-grid').innerHTML =
+    '<div class="skeleton-card"></div>'.repeat(4);
+  document.getElementById('results-count').textContent = '';
+}
+
+function showError(msg) {
+  document.getElementById('cards-grid').innerHTML =
+    `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-title">${msg}</div></div>`;
+  showToast(msg);
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────
+requestLocation();
+</script>
+</body>
+</html>
