@@ -539,7 +539,7 @@ function setFilter(el, type) {
 const TYPE_EMOJI = { '12':'🏯','14':'🎭','15':'🎉','25':'🗺️','28':'⛷️','32':'🏨','38':'🛍️','39':'🍜' };
 
 function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function renderCards(items) {
@@ -554,7 +554,7 @@ function renderCards(items) {
     const imgEl = item.firstImage
       ? `<img src="${esc(item.firstImage)}" alt="${esc(item.title)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=card-img-placeholder>${emoji}</div>'">`
       : `<div class="card-img-placeholder">${emoji}</div>`;
-    return `<div class="card" onclick="openDetail('${esc(item.contentId)}','${esc(item.contentTypeId)}')">
+    return `<div class="card" data-content-id="${esc(item.contentId)}" data-content-type-id="${esc(item.contentTypeId)}">
       <div class="card-img-wrap">
         ${imgEl}
         <div class="card-type-badge">${esc(item.typeName||'')}</div>
@@ -566,6 +566,9 @@ function renderCards(items) {
       </div>
     </div>`;
   }).join('');
+  grid.querySelectorAll('.card[data-content-id]').forEach(card => {
+    card.addEventListener('click', () => openDetail(card.dataset.contentId, card.dataset.contentTypeId));
+  });
 }
 
 /* ── DETAIL MODAL ── */
@@ -575,7 +578,7 @@ async function openDetail(contentId, contentTypeId) {
   overlay.style.display = 'flex';
   mc.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)"><div style="font-size:32px;margin-bottom:12px">⏳</div>Loading...</div>`;
   try {
-    const res = await fetch(`${API_BASE}/api/detail?contentId=${contentId}&contentTypeId=${contentTypeId}`);
+    const res = await fetch(`${API_BASE}/api/detail?contentId=${encodeURIComponent(contentId)}&contentTypeId=${encodeURIComponent(contentTypeId)}`);
     const d = await res.json();
     const emoji = TYPE_EMOJI[d.contentTypeId] || '📍';
     const heroHtml = d.firstImage
