@@ -9,6 +9,7 @@ const MAX_CHAT_CONTENT_CHARS = 1200;
 const MAX_KEYWORD_CHARS = 80;
 const MAX_NUM_OF_ROWS = 20;
 const MAX_RADIUS_METERS = 10000;
+const MAX_MAP_RADIUS_METERS = 20000;
 const RATE_LIMIT_WINDOW_SECONDS = 60;
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -91,7 +92,7 @@ export default {
 async function handleMap(url, env, request) {
   const lat = parseCoordinate(url.searchParams.get('lat'), -90, 90, 'lat');
   const lng = parseCoordinate(url.searchParams.get('lng'), -180, 180, 'lng');
-  const radius = parseIntegerParam(url, 'radius', 5000, 1000, MAX_RADIUS_METERS);
+  const radius = parseIntegerParam(url, 'radius', 5000, 1000, MAX_MAP_RADIUS_METERS);
   const type = parseContentType(url.searchParams.get('type'), '');
   const numOfRows = parseIntegerParam(url, 'numOfRows', 12, 4, MAX_NUM_OF_ROWS);
 

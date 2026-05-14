@@ -716,7 +716,7 @@ function scheduleMapLoad() {
 }
 
 function getMapSettings(zoom) {
-  if (zoom >= 15) return { radius: 1800, rows: 22, grid: 0.008 };
+  if (zoom >= 15) return { radius: 1800, rows: 20, grid: 0.008 };
   if (zoom >= 13) return { radius: 3500, rows: 18, grid: 0.018 };
   if (zoom >= 11) return { radius: 7000, rows: 14, grid: 0.045 };
   if (zoom >= 9) return { radius: 14000, rows: 10, grid: 0.09 };
@@ -753,13 +753,14 @@ async function loadMapPlaces(force) {
     });
     if (activeFilter) p.set('type', activeFilter);
     const res = await fetch(`${API_BASE}/api/map?${p}`, { signal: mapAbort.signal });
+    if (!res.ok) throw new Error(`Map request failed: ${res.status}`);
     const data = await res.json();
     const items = data.items || [];
     mapCache.set(key, { items, time: Date.now() });
     if (mapCache.size > 80) mapCache.delete(mapCache.keys().next().value);
     renderMapMarkers(items, settings);
   } catch (e) {
-    if (e.name !== 'AbortError') showMapStatus('Map places could not load');
+    if (e.name !== 'AbortError') showMapStatus('Could not load this area. Existing places kept.', 2200);
   }
 }
 
