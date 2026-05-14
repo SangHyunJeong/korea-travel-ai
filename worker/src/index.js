@@ -35,6 +35,7 @@ const RATE_LIMITS = {
   '/api/chat': 20,
   '/api/search': 60,
   '/api/nearby': 60,
+  '/api/map': 80,
   '/api/detail': 80,
   '/api/health': 120,
 };
@@ -71,6 +72,7 @@ export default {
       }
 
       if (path === '/api/nearby' && request.method === 'GET') return await handleNearby(url, env, request);
+      if (path === '/api/map' && request.method === 'GET') return await handleMap(url, env, request);
       if (path === '/api/search' && request.method === 'GET') return await handleSearch(url, env, request);
       if (path === '/api/detail' && request.method === 'GET') return await handleDetail(url, env, request);
       if (path === '/api/chat'   && request.method === 'POST') return await handleChat(request, env);
@@ -84,6 +86,36 @@ export default {
     }
   },
 };
+
+// ── 지도 탐색용 경량 장소 목록 ───────────────────────────────────
+async function handleMap(url, env, request) {
+  const lat = url.searchParams.get('lat');
+  const lng = url.searchParams.get('lng');
+  const radius = clampNumber(url.searchParams.get('radius'), 1000, 20000, 5000);
+  const type = url.searchParams.get('type') || '';
+  const numOfRows = clampNumber(url.searchParams.get('numOfRows'), 4, 24, 12);
+
+  if (!lat || !lng) return jsonResponse({ error: 'lat, lng required' }, 400, request, env);
+
+  const params = new URLSearchParams({
+    serviceKey: env.TOUR_API_KEY,
+    mapX: lng, mapY: lat, radius: String(radius),
+    MobileOS: 'ETC', MobileApp: 'KoreaTravelAI',
+    _type: 'json', numOfRows: String(numOfRows), pageNo: '1', arrange: 'S',
+  });
+  if (type) params.set('contentTypeId', type);
+
+  const res = await fetch(`${TOUR_BASE}/locationBasedList2?${params}`);
+  const data = await res.json();
+  const items = extractItems(data).map(toMapItem).filter(item => item.mapx && item.mapy);
+
+  return jsonResponse({
+    items,
+    total: data?.response?.body?.totalCount || 0,
+    radius,
+    numOfRows,
+  }, 200, request, env);
+}
 
 // ── 1. 위치 기반 주변 관광지 ────────────────────────────────────
 async function handleNearby(url, env, request) {
@@ -290,6 +322,28 @@ async function translateItem(item, env) {
 
   await setCache(env, cacheKey, result, 60 * 60 * 24 * 30);
   return result;
+}
+
+function toMapItem(item) {
+  return {
+    contentId: item.contentid,
+    contentTypeId: item.contenttypeid,
+    typeName: CONTENT_TYPES[item.contenttypeid] || 'Attraction',
+    title: stripHtml(item.title || ''),
+    address: stripHtml(item.addr1 || ''),
+    mapx: item.mapx,
+    mapy: item.mapy,
+    dist: item.dist,
+    firstImage: item.firstimage,
+    tel: item.tel,
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  if (value === null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
 }
 
 async function geminiTranslateObject(obj, env) {
