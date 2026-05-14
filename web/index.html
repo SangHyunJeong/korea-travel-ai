@@ -209,6 +209,21 @@ header {
   background: #111;
   transform: rotate(-45deg) scale(1.12);
 }
+.map-cluster {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.26);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+}
 .map-status {
   position: absolute;
   top: 12px;
@@ -592,8 +607,12 @@ header {
 <script>
 const API_BASE = 'https://korea-travel-ai-worker.jsh900118.workers.dev';
 let userLocation = null, activeFilter = '', chatHistory = [], currentTab = 'explore';
-let map = null, mapLayer = null, mapLoadTimer = null, mapAbort = null, selectedMapItem = null;
-const mapCache = new Map();
+let map = null, mapLayer = null, mapLoadTimer = null, mapAbort = null, mapLoadSeq = 0, mapLastRequestAt = 0, selectedMapItem = null;
+const mapTileCache = new Map();
+const mapTileRequests = new Set();
+const mapItems = new Map();
+const MAP_TILE_CACHE_LIMIT = 160;
+const MAP_ITEM_LIMIT = 360;
 
 /* ── THEME ── */
 (function() {
@@ -679,6 +698,7 @@ function setFilter(el, type) {
   activeFilter = type;
   hideMapPreview();
   if (currentTab === 'map') {
+    resetMapData();
     loadMapPlaces(true);
     return;
   }
@@ -712,77 +732,231 @@ function initMap() {
 function scheduleMapLoad() {
   clearTimeout(mapLoadTimer);
   hideMapPreview();
-  mapLoadTimer = setTimeout(() => loadMapPlaces(false), 650);
+  renderMapMarkers(getMapSettings(map.getZoom()), false);
+  mapLoadTimer = setTimeout(() => loadMapPlaces(false), 700);
 }
 
 function getMapSettings(zoom) {
-  if (zoom >= 15) return { radius: 1800, rows: 20, grid: 0.008 };
-  if (zoom >= 13) return { radius: 3500, rows: 18, grid: 0.018 };
-  if (zoom >= 11) return { radius: 7000, rows: 14, grid: 0.045 };
-  if (zoom >= 9) return { radius: 14000, rows: 10, grid: 0.09 };
-  return { radius: 20000, rows: 6, grid: 0.18, hint: 'Zoom in for more places' };
+  if (zoom >= 15) return { band: 'street', radius: 1800, rows: 14, grid: 0.012, maxTiles: 4, clusterPixels: 34 };
+  if (zoom >= 13) return { band: 'area', radius: 3500, rows: 12, grid: 0.025, maxTiles: 4, clusterPixels: 42 };
+  if (zoom >= 11) return { band: 'district', radius: 7000, rows: 10, grid: 0.06, maxTiles: 4, clusterPixels: 50 };
+  if (zoom >= 9) return { band: 'region', radius: 14000, rows: 8, grid: 0.14, maxTiles: 2, clusterPixels: 58 };
+  return { band: 'country', radius: 20000, rows: 6, grid: 0.24, maxTiles: 1, clusterPixels: 64, hint: 'Zoom in for more places' };
 }
 
-function mapCacheKey(center, zoom, settings) {
-  const lat = Math.round(center.lat / settings.grid) * settings.grid;
-  const lng = Math.round(center.lng / settings.grid) * settings.grid;
-  return [lat.toFixed(3), lng.toFixed(3), Math.floor(zoom), settings.rows, activeFilter || 'all'].join(':');
+function resetMapData() {
+  if (mapAbort) mapAbort.abort();
+  mapTileCache.clear();
+  mapTileRequests.clear();
+  mapItems.clear();
+  mapLastRequestAt = 0;
+  selectedMapItem = null;
+  mapLayer?.clearLayers();
+}
+
+function mapTileFor(lat, lng, settings) {
+  return {
+    y: Math.floor(lat / settings.grid),
+    x: Math.floor(lng / settings.grid),
+  };
+}
+
+function mapTileCenter(tile, settings) {
+  return {
+    lat: (tile.y + 0.5) * settings.grid,
+    lng: (tile.x + 0.5) * settings.grid,
+  };
+}
+
+function mapTileKey(tile, settings) {
+  return [settings.band, tile.y, tile.x, settings.rows, activeFilter || 'all'].join(':');
+}
+
+function getVisibleMapTiles(settings) {
+  const bounds = map.getBounds().pad(0.12);
+  const center = map.getCenter();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  const start = mapTileFor(sw.lat, sw.lng, settings);
+  const end = mapTileFor(ne.lat, ne.lng, settings);
+  const tiles = [];
+  for (let y = start.y; y <= end.y; y++) {
+    for (let x = start.x; x <= end.x; x++) {
+      const tile = { x, y };
+      const tileCenter = mapTileCenter(tile, settings);
+      tiles.push({
+        ...tile,
+        key: mapTileKey(tile, settings),
+        center: tileCenter,
+        distance: center.distanceTo(L.latLng(tileCenter.lat, tileCenter.lng)),
+      });
+    }
+  }
+  return tiles.sort((a, b) => a.distance - b.distance).slice(0, settings.maxTiles);
+}
+
+function mapItemKey(item) {
+  return item.contentId || `${Number(item.mapy).toFixed(5)}:${Number(item.mapx).toFixed(5)}:${item.title || ''}`;
+}
+
+function rememberMapItems(items) {
+  const seenAt = Date.now();
+  items.forEach(item => {
+    if (!item.mapx || !item.mapy) return;
+    mapItems.set(mapItemKey(item), { ...item, seenAt });
+  });
+  if (mapItems.size <= MAP_ITEM_LIMIT) return;
+  [...mapItems.entries()]
+    .sort((a, b) => (a[1].seenAt || 0) - (b[1].seenAt || 0))
+    .slice(0, mapItems.size - MAP_ITEM_LIMIT)
+    .forEach(([key]) => mapItems.delete(key));
+}
+
+function trimMapTileCache() {
+  while (mapTileCache.size > MAP_TILE_CACHE_LIMIT) {
+    mapTileCache.delete(mapTileCache.keys().next().value);
+  }
+}
+
+function visibleMapItems() {
+  const bounds = map.getBounds().pad(0.16);
+  return [...mapItems.values()].filter(item => {
+    const lat = Number(item.mapy);
+    const lng = Number(item.mapx);
+    return Number.isFinite(lat) && Number.isFinite(lng) && bounds.contains([lat, lng]);
+  });
 }
 
 async function loadMapPlaces(force) {
   if (!map) return;
-  const center = map.getCenter();
   const zoom = map.getZoom();
   const settings = getMapSettings(zoom);
-  const key = mapCacheKey(center, zoom, settings);
-  if (!force && mapCache.has(key)) {
-    renderMapMarkers(mapCache.get(key).items, settings);
+  const tiles = getVisibleMapTiles(settings);
+
+  if (force) tiles.forEach(tile => mapTileCache.delete(tile.key));
+
+  tiles.forEach(tile => {
+    const cached = mapTileCache.get(tile.key);
+    if (cached) rememberMapItems(cached.items);
+  });
+  renderMapMarkers(settings, false);
+
+  if (mapAbort) {
+    mapAbort.abort();
+    mapTileRequests.clear();
+  }
+  const missing = tiles.filter(tile => !mapTileCache.has(tile.key) && !mapTileRequests.has(tile.key));
+  if (!missing.length) {
+    showMapStatus(mapStatusText(settings), 1200);
     return;
   }
 
-  showMapStatus(settings.hint || 'Loading places...');
-  if (mapAbort) mapAbort.abort();
+  const now = Date.now();
+  const waitMs = Math.max(0, 1200 - (now - mapLastRequestAt));
+  if (!force && waitMs) {
+    clearTimeout(mapLoadTimer);
+    mapLoadTimer = setTimeout(() => loadMapPlaces(false), waitMs);
+    return;
+  }
+  mapLastRequestAt = now;
+
+  showMapStatus(settings.hint || 'Loading this area...');
   mapAbort = new AbortController();
+  const loadSeq = ++mapLoadSeq;
 
   try {
-    const p = new URLSearchParams({
-      lat: center.lat.toFixed(6),
-      lng: center.lng.toFixed(6),
-      radius: settings.radius,
-      numOfRows: settings.rows,
-    });
-    if (activeFilter) p.set('type', activeFilter);
-    const res = await fetch(`${API_BASE}/api/map?${p}`, { signal: mapAbort.signal });
-    if (!res.ok) throw new Error(`Map request failed: ${res.status}`);
-    const data = await res.json();
-    const items = data.items || [];
-    mapCache.set(key, { items, time: Date.now() });
-    if (mapCache.size > 80) mapCache.delete(mapCache.keys().next().value);
-    renderMapMarkers(items, settings);
+    const settled = await Promise.allSettled(missing.map(tile => loadMapTile(tile, settings, mapAbort.signal)));
+    if (loadSeq !== mapLoadSeq) return;
+    const failed = settled.some(result => result.status === 'rejected');
+    renderMapMarkers(settings, true);
+    if (failed) showMapStatus('Some areas could not load. Existing places kept.', 2200);
   } catch (e) {
     if (e.name !== 'AbortError') showMapStatus('Could not load this area. Existing places kept.', 2200);
   }
 }
 
-function renderMapMarkers(items, settings) {
-  mapLayer.clearLayers();
-  selectedMapItem = null;
-  hideMapPreview();
+async function loadMapTile(tile, settings, signal) {
+  mapTileRequests.add(tile.key);
+  try {
+    const p = new URLSearchParams({
+      lat: tile.center.lat.toFixed(6),
+      lng: tile.center.lng.toFixed(6),
+      radius: settings.radius,
+      numOfRows: settings.rows,
+    });
+    if (activeFilter) p.set('type', activeFilter);
+    const res = await fetch(`${API_BASE}/api/map?${p}`, { signal });
+    if (!res.ok) throw new Error(`Map request failed: ${res.status}`);
+    const data = await res.json();
+    const items = data.items || [];
+    mapTileCache.set(tile.key, { items, time: Date.now() });
+    trimMapTileCache();
+    rememberMapItems(items);
+  } finally {
+    mapTileRequests.delete(tile.key);
+  }
+}
+
+function clusterMapItems(items, settings) {
+  const clusters = [];
   items.forEach(item => {
+    const lat = Number(item.mapy);
+    const lng = Number(item.mapx);
+    const point = map.latLngToLayerPoint([lat, lng]);
+    const cluster = clusters.find(c => c.point.distanceTo(point) <= settings.clusterPixels);
+    if (cluster) {
+      cluster.items.push(item);
+      cluster.point = L.point(
+        (cluster.point.x * (cluster.items.length - 1) + point.x) / cluster.items.length,
+        (cluster.point.y * (cluster.items.length - 1) + point.y) / cluster.items.length
+      );
+      cluster.lat = (cluster.lat * (cluster.items.length - 1) + lat) / cluster.items.length;
+      cluster.lng = (cluster.lng * (cluster.items.length - 1) + lng) / cluster.items.length;
+    } else {
+      clusters.push({ items: [item], point, lat, lng });
+    }
+  });
+  return clusters;
+}
+
+function mapStatusText(settings) {
+  const count = visibleMapItems().length;
+  if (!count) return settings.hint || 'No places found here';
+  return `${count} places shown${settings.hint ? ' · ' + settings.hint : ''}`;
+}
+
+function renderMapMarkers(settings = getMapSettings(map.getZoom()), announce = true) {
+  const items = visibleMapItems();
+  const clusters = clusterMapItems(items, settings);
+  mapLayer.clearLayers();
+  clusters.forEach(cluster => {
+    if (cluster.items.length > 1) {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="map-cluster">${cluster.items.length}</div>`,
+        iconSize: [40, 34],
+        iconAnchor: [20, 17],
+      });
+      const marker = L.marker([cluster.lat, cluster.lng], { icon }).addTo(mapLayer);
+      marker.on('click', () => {
+        const nextZoom = Math.min(map.getZoom() + 2, 17);
+        map.setView([cluster.lat, cluster.lng], nextZoom, { animate: true });
+      });
+      return;
+    }
+    const item = cluster.items[0];
     const emoji = TYPE_EMOJI[item.contentTypeId] || '📍';
+    const selectedClass = selectedMapItem && mapItemKey(selectedMapItem) === mapItemKey(item) ? ' selected' : '';
     const icon = L.divIcon({
       className: '',
-      html: `<div class="map-marker" data-id="${esc(item.contentId)}"><span>${emoji}</span></div>`,
+      html: `<div class="map-marker${selectedClass}" data-id="${esc(item.contentId)}"><span>${emoji}</span></div>`,
       iconSize: [30, 30],
       iconAnchor: [15, 28],
     });
     const marker = L.marker([Number(item.mapy), Number(item.mapx)], { icon }).addTo(mapLayer);
     marker.on('click', () => selectMapItem(item, marker));
   });
-  const message = items.length
-    ? `${items.length} places nearby${settings.hint ? ' · ' + settings.hint : ''}`
-    : 'No places found here';
-  showMapStatus(message, 1600);
+  if (announce) showMapStatus(mapStatusText(settings), 1600);
 }
 
 function selectMapItem(item, marker) {
@@ -834,7 +1008,6 @@ function centerMapOnUser() {
     return;
   }
   map.setView([userLocation.lat, userLocation.lng], Math.max(map.getZoom(), 13), { animate: true });
-  loadMapPlaces(true);
 }
 
 /* ── RENDER CARDS ── */
