@@ -393,9 +393,45 @@ header {
 .msg.user .msg-bubble { background: var(--accent); color: #fff; border-top-right-radius: 4px; }
 .msg-bubble strong { font-weight: 800; }
 .msg-bubble em { font-style: italic; }
-.msg-bubble ul { margin: 6px 0 0 18px; padding: 0; }
+.msg-bubble p { margin: 0 0 8px; }
+.msg-bubble p:last-child { margin-bottom: 0; }
+.msg-bubble ul, .msg-bubble ol { margin: 6px 0 8px 18px; padding: 0; }
 .msg-bubble li { margin: 4px 0; }
 .msg-bubble a { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.msg-bubble code {
+  background: rgba(127,127,127,0.16);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+.msg-bubble pre {
+  margin: 8px 0;
+  padding: 10px;
+  background: rgba(127,127,127,0.14);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.msg-bubble pre code { background: none; padding: 0; }
+.msg-bubble blockquote {
+  margin: 8px 0;
+  padding: 6px 0 6px 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--text2);
+}
+.msg-table-wrap { overflow-x: auto; margin: 8px 0; }
+.msg-bubble table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.msg-bubble th, .msg-bubble td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.msg-bubble th { background: rgba(127,127,127,0.12); font-weight: 800; }
+.msg-heading {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+.msg-heading:first-child { margin-top: 0; }
 
 .typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
 .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); animation: typeBlink 1.2s infinite; }
@@ -1503,42 +1539,126 @@ function addMsg(role, text) {
 }
 
 function renderChatMarkdown(text) {
-  const lines = String(text || '').split('\n');
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
   const html = [];
-  let inList = false;
+  let listTag = '';
+  let inCodeBlock = false;
+  let codeLines = [];
   const closeList = () => {
-    if (!inList) return;
-    html.push('</ul>');
-    inList = false;
+    if (!listTag) return;
+    html.push(`</${listTag}>`);
+    listTag = '';
   };
-  lines.forEach(line => {
+  const addListItem = (tag, content) => {
+    if (listTag !== tag) {
+      closeList();
+      html.push(`<${tag}>`);
+      listTag = tag;
+    }
+    html.push(`<li>${renderInlineMarkdown(content)}</li>`);
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      if (inCodeBlock) {
+        html.push(`<pre><code>${esc(codeLines.join('\n'))}</code></pre>`);
+        inCodeBlock = false;
+        codeLines = [];
+      } else {
+        closeList();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+    if (isMarkdownTableStart(lines, i)) {
+      closeList();
+      const table = collectMarkdownTable(lines, i);
+      html.push(renderMarkdownTable(table.rows));
+      i = table.endIndex;
+      continue;
+    }
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+)$/);
+    if (heading) {
+      closeList();
+      html.push(`<span class="msg-heading">${renderInlineMarkdown(heading[1])}</span>`);
+      continue;
+    }
+    const quote = line.match(/^\s{0,3}>\s?(.+)$/);
+    if (quote) {
+      closeList();
+      html.push(`<blockquote>${renderInlineMarkdown(quote[1])}</blockquote>`);
+      continue;
+    }
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (numbered) {
+      addListItem('ol', numbered[1]);
+      continue;
+    }
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
     if (bullet) {
-      if (!inList) {
-        html.push('<ul>');
-        inList = true;
-      }
-      html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
-      return;
+      addListItem('ul', bullet[1]);
+      continue;
     }
     closeList();
-    if (!line.trim()) {
-      if (html.length && html[html.length - 1] !== '<br>') html.push('<br>');
-      return;
-    }
-    html.push(renderInlineMarkdown(line), '<br>');
-  });
+    if (line.trim()) html.push(`<p>${renderInlineMarkdown(line)}</p>`);
+  }
   closeList();
-  while (html[html.length - 1] === '<br>') html.pop();
+  if (inCodeBlock) html.push(`<pre><code>${esc(codeLines.join('\n'))}</code></pre>`);
   return html.join('');
 }
 
 function renderInlineMarkdown(text) {
-  return esc(text)
+  const codeSpans = [];
+  const withCodeTokens = String(text || '').replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE${codeSpans.length}@@`;
+    codeSpans.push(`<code>${esc(code)}</code>`);
+    return token;
+  });
+  let html = esc(withCodeTokens)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_]+)__/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+  codeSpans.forEach((code, index) => {
+    html = html.replace(`@@CODE${index}@@`, code);
+  });
+  return html;
+}
+
+function isMarkdownTableStart(lines, index) {
+  return isTableRow(lines[index]) && isTableDivider(lines[index + 1] || '');
+}
+
+function isTableRow(line) {
+  return String(line || '').includes('|') && String(line || '').trim().replace(/^\||\|$/g, '').includes('|');
+}
+
+function isTableDivider(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(String(line || ''));
+}
+
+function collectMarkdownTable(lines, startIndex) {
+  const rows = [lines[startIndex]];
+  let i = startIndex + 2;
+  while (i < lines.length && isTableRow(lines[i])) {
+    rows.push(lines[i]);
+    i++;
+  }
+  return { rows, endIndex: i - 1 };
+}
+
+function renderMarkdownTable(rows) {
+  const cells = row => row.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+  const [header, ...body] = rows.map(cells);
+  return `<div class="msg-table-wrap"><table>
+    <thead><tr>${header.map(cell => `<th>${renderInlineMarkdown(cell)}</th>`).join('')}</tr></thead>
+    <tbody>${body.map(row => `<tr>${row.map(cell => `<td>${renderInlineMarkdown(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function addTyping() {
