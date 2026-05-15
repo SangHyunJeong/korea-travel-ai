@@ -3,7 +3,7 @@
 
 const TOUR_BASE = 'https://apis.data.go.kr/B551011/KorService2';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const GEMINI_MODELS = ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_CONTENT_CHARS = 1200;
