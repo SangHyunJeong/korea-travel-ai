@@ -131,6 +131,45 @@ header {
 .search-btn:hover { opacity: 0.88; }
 .search-btn svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; }
 
+/* ── DESTINATION DISCOVERY ── */
+.destination-block { margin-bottom: 14px; }
+.destination-search-wrap { position: relative; margin-bottom: 10px; }
+.destination-input {
+  width: 100%; background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 14px 52px 14px 16px;
+  font-family: inherit; font-size: 15px; font-weight: 600; color: var(--text);
+  outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.destination-input::placeholder { color: var(--text3); font-weight: 500; }
+.destination-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,56,92,0.1); background: var(--bg); }
+.destination-search-btn {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 38px; height: 38px; background: var(--text);
+  border: none; border-radius: 11px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: opacity 0.2s;
+}
+.destination-search-btn:hover { opacity: 0.86; }
+.destination-search-btn svg { width: 18px; height: 18px; stroke: var(--bg); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.destination-anchor {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 10px; background: var(--surface);
+}
+.destination-anchor-label { min-width: 0; font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.destination-clear {
+  flex-shrink: 0; border: none; background: transparent; color: var(--accent);
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.destination-candidates { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.destination-candidate {
+  width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; cursor: pointer; font-family: inherit;
+  transition: border-color 0.2s, background 0.2s;
+}
+.destination-candidate:hover { border-color: var(--accent); background: var(--surface); }
+.destination-candidate-title { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.35; margin-bottom: 3px; }
+.destination-candidate-sub { font-size: 12px; color: var(--text2); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ── FILTER CHIPS ── */
 .filter-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .filter-row::-webkit-scrollbar { display: none; }
@@ -491,6 +530,17 @@ header {
 .info-icon { font-size: 18px; flex-shrink: 0; }
 .info-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text3); margin-bottom: 3px; }
 .info-val { font-size: 14px; color: var(--text); line-height: 1.5; }
+.map-links {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+  margin: 16px 0 6px;
+}
+.map-link {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 38px; border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); background: var(--surface); text-decoration: none;
+  font-size: 12px; font-weight: 700;
+}
+.map-link:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── TOAST ── */
 .toast {
@@ -539,15 +589,26 @@ header {
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('explore')">Explore</button>
-    <button class="tab" onclick="switchTab('map')">Map</button>
-    <button class="tab" onclick="switchTab('chat')">AI Guide</button>
+    <button class="tab active" data-tab="explore" onclick="switchTab('explore')">Explore</button>
+    <button class="tab" data-tab="chat" onclick="switchTab('chat')">AI Guide</button>
   </div>
 
   <div class="content" id="content">
 
     <div id="tab-explore">
-      <button class="nearby-btn" onclick="loadNearby()">📍 Find places near me</button>
+      <div class="destination-block">
+        <div class="destination-search-wrap">
+          <input class="destination-input" id="destination-input" type="text"
+            placeholder="Where do you want to explore?"
+            onkeydown="if(event.key==='Enter') searchDestination()">
+          <button class="destination-search-btn" onclick="searchDestination()" title="Find destination">
+            <svg viewBox="0 0 24 24"><path d="M12 21s7-4.4 7-11a7 7 0 0 0-14 0c0 6.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+          </button>
+        </div>
+        <div class="destination-anchor" id="destination-anchor" style="display:none"></div>
+        <div class="destination-candidates" id="destination-candidates"></div>
+      </div>
+      <button class="nearby-btn" id="nearby-btn" onclick="useMyLocation()">📍 Use my current location</button>
       <div class="section-header">
         <span class="section-title" id="results-label">Nearby</span>
         <span class="section-count" id="results-count"></span>
@@ -607,12 +668,31 @@ header {
 <script>
 const API_BASE = 'https://korea-travel-ai-worker.jsh900118.workers.dev';
 let userLocation = null, activeFilter = '', chatHistory = [], currentTab = 'explore';
+let destinationLocation = null, destinationCandidates = [];
 let map = null, mapLayer = null, mapLoadTimer = null, mapAbort = null, mapLoadSeq = 0, mapLastRequestAt = 0, selectedMapItem = null;
 const mapTileCache = new Map();
 const mapTileRequests = new Set();
 const mapItems = new Map();
 const MAP_TILE_CACHE_LIMIT = 160;
 const MAP_ITEM_LIMIT = 360;
+const DESTINATION_ALIASES = {
+  hongdae: '홍대',
+  'hongik university': '홍익대학교',
+  haeundae: '해운대',
+  gyeongbokgung: '경복궁',
+  'gyeongbokgung palace': '경복궁',
+  seongsu: '성수동',
+  'seongsu-dong': '성수동',
+  seongsudong: '성수동',
+  'busan station': '부산역',
+  myeongdong: '명동',
+  namsan: '남산',
+  itaewon: '이태원',
+  gangnam: '강남',
+  insadong: '인사동',
+  bukchon: '북촌',
+  'jeju airport': '제주공항',
+};
 
 /* ── THEME ── */
 (function() {
@@ -649,24 +729,113 @@ function requestLocation() {
       userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       document.getElementById('location-text').textContent = 'Near you';
       if (map) map.setView([userLocation.lat, userLocation.lng], Math.max(map.getZoom(), 13));
-      loadNearby();
+      if (!destinationLocation) loadNearby();
     },
     () => {
       userLocation = { lat: 37.5512, lng: 126.9882, name: 'Namsan' };
       document.getElementById('location-text').textContent = 'Namsan, Seoul';
       if (map) map.setView([userLocation.lat, userLocation.lng], Math.max(map.getZoom(), 13));
-      loadNearby();
+      if (!destinationLocation) loadNearby();
     }
   );
 }
 
+/* ── DESTINATION ── */
+async function searchDestination() {
+  const input = document.getElementById('destination-input');
+  const keyword = input.value.trim();
+  if (!keyword) return;
+  const searchKeyword = normalizeDestinationKeyword(keyword);
+  const candidatesEl = document.getElementById('destination-candidates');
+  candidatesEl.innerHTML = `<div class="destination-candidate"><div class="destination-candidate-title">Finding places...</div></div>`;
+  try {
+    const p = new URLSearchParams({ keyword: searchKeyword, numOfRows: 5 });
+    const res = await fetch(`${API_BASE}/api/search?${p}`);
+    if (!res.ok) throw new Error(`Destination search failed: ${res.status}`);
+    const data = await res.json();
+    destinationCandidates = (data.items || []).filter(item => Number.isFinite(Number(item.mapx)) && Number.isFinite(Number(item.mapy)));
+    renderDestinationCandidates();
+    if (!destinationCandidates.length) showToast('No destination candidates found');
+  } catch {
+    destinationCandidates = [];
+    candidatesEl.innerHTML = '';
+    showToast('Destination search failed');
+  }
+}
+
+function normalizeDestinationKeyword(keyword) {
+  const key = keyword.toLowerCase().trim().replace(/\s+/g, ' ');
+  return DESTINATION_ALIASES[key] || keyword;
+}
+
+function renderDestinationCandidates() {
+  const el = document.getElementById('destination-candidates');
+  el.innerHTML = destinationCandidates.map((item, index) => {
+    const emoji = TYPE_EMOJI[item.contentTypeId] || '📍';
+    const sub = [item.typeName, item.address].filter(Boolean).join(' · ');
+    return `<button class="destination-candidate" onclick="selectDestination(${index})">
+      <div class="destination-candidate-title">${emoji} ${esc(item.title || 'Untitled place')}</div>
+      <div class="destination-candidate-sub">${esc(sub || 'Korea')}</div>
+    </button>`;
+  }).join('');
+}
+
+function selectDestination(index) {
+  const item = destinationCandidates[index];
+  if (!item) return;
+  destinationLocation = {
+    lat: Number(item.mapy),
+    lng: Number(item.mapx),
+    label: item.title || 'Selected destination',
+  };
+  document.getElementById('destination-input').value = destinationLocation.label;
+  destinationCandidates = [];
+  document.getElementById('destination-candidates').innerHTML = '';
+  renderDestinationAnchor();
+  loadNearby();
+}
+
+function renderDestinationAnchor() {
+  const el = document.getElementById('destination-anchor');
+  if (!destinationLocation) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <div class="destination-anchor-label">Near ${esc(destinationLocation.label)}</div>
+    <button class="destination-clear" onclick="clearDestination()">Clear</button>`;
+  el.style.display = 'flex';
+}
+
+function clearDestination() {
+  destinationLocation = null;
+  destinationCandidates = [];
+  document.getElementById('destination-input').value = '';
+  document.getElementById('destination-candidates').innerHTML = '';
+  renderDestinationAnchor();
+  loadNearby();
+}
+
+function useMyLocation() {
+  destinationLocation = null;
+  destinationCandidates = [];
+  document.getElementById('destination-input').value = '';
+  document.getElementById('destination-candidates').innerHTML = '';
+  renderDestinationAnchor();
+  if (userLocation) loadNearby(); else requestLocation();
+}
+
 /* ── NEARBY ── */
 async function loadNearby() {
-  if (!userLocation) { requestLocation(); return; }
+  if (!destinationLocation && !userLocation) { requestLocation(); return; }
+  const loc = destinationLocation || userLocation;
   showSkeletons();
-  document.getElementById('results-label').textContent = 'Nearby';
+  document.getElementById('results-label').textContent = destinationLocation
+    ? `Near ${destinationLocation.label}`
+    : 'Near your location';
   try {
-    const p = new URLSearchParams({ lat: userLocation.lat, lng: userLocation.lng, radius: 3000, numOfRows: 20 });
+    const p = new URLSearchParams({ lat: loc.lat, lng: loc.lng, radius: 3000, numOfRows: 20 });
     if (activeFilter) p.set('type', activeFilter);
     const res = await fetch(`${API_BASE}/api/nearby?${p}`);
     const data = await res.json();
@@ -986,7 +1155,7 @@ function renderMapPreview(item) {
 
 function openSelectedMapDetail() {
   if (!selectedMapItem) return;
-  openDetail(selectedMapItem.contentId, selectedMapItem.contentTypeId);
+  openDetail(selectedMapItem.contentId, selectedMapItem.contentTypeId, selectedMapItem);
 }
 
 function hideMapPreview() {
@@ -1029,7 +1198,8 @@ function renderCards(items) {
     const imgEl = item.firstImage
       ? `<img src="${esc(item.firstImage)}" alt="${esc(item.title)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=card-img-placeholder>${emoji}</div>'">`
       : `<div class="card-img-placeholder">${emoji}</div>`;
-    return `<div class="card" data-content-id="${esc(item.contentId)}" data-content-type-id="${esc(item.contentTypeId)}">
+    return `<div class="card" data-content-id="${esc(item.contentId)}" data-content-type-id="${esc(item.contentTypeId)}"
+      data-mapx="${esc(item.mapx)}" data-mapy="${esc(item.mapy)}" data-title="${esc(item.title)}">
       <div class="card-img-wrap">
         ${imgEl}
         <div class="card-type-badge">${esc(item.typeName||'')}</div>
@@ -1042,12 +1212,16 @@ function renderCards(items) {
     </div>`;
   }).join('');
   grid.querySelectorAll('.card[data-content-id]').forEach(card => {
-    card.addEventListener('click', () => openDetail(card.dataset.contentId, card.dataset.contentTypeId));
+    card.addEventListener('click', () => openDetail(card.dataset.contentId, card.dataset.contentTypeId, {
+      mapx: card.dataset.mapx,
+      mapy: card.dataset.mapy,
+      title: card.dataset.title,
+    }));
   });
 }
 
 /* ── DETAIL MODAL ── */
-async function openDetail(contentId, contentTypeId) {
+async function openDetail(contentId, contentTypeId, fallbackPlace = {}) {
   const overlay = document.getElementById('modal-overlay');
   const mc = document.getElementById('modal-content');
   overlay.style.display = 'flex';
@@ -1066,6 +1240,12 @@ async function openDetail(contentId, contentTypeId) {
       d.address ? infoRow('📍','Address',d.address) : '',
       d.tel     ? infoRow('📞','Phone',d.tel)       : '',
     ].filter(Boolean).join('');
+    const mapTarget = {
+      ...d,
+      mapx: d.mapx || fallbackPlace.mapx,
+      mapy: d.mapy || fallbackPlace.mapy,
+      title: d.title || fallbackPlace.title,
+    };
 
     mc.innerHTML = `
       <div class="modal-hero">
@@ -1078,6 +1258,7 @@ async function openDetail(contentId, contentTypeId) {
         ${d.overview ? `<div class="modal-overview">${esc(d.overview)}</div>` : ''}
         ${gallery}
         ${baseRows}
+        ${externalMapLinks(mapTarget)}
         ${typeInfoRows(d.typeInfo, d.contentTypeId)}
       </div>`;
   } catch {
@@ -1090,6 +1271,22 @@ function infoRow(icon, label, val) {
     <div class="info-icon">${icon}</div>
     <div><div class="info-label">${label}</div><div class="info-val">${esc(val)}</div></div>
   </div>`;
+}
+
+function externalMapLinks(d) {
+  const lat = Number(d.mapy);
+  const lng = Number(d.mapx);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  const coord = encodeURIComponent(`${lat},${lng}`);
+  const label = encodeURIComponent(d.title || `${lat},${lng}`);
+  const links = [
+    ['Google', `https://www.google.com/maps/search/?api=1&query=${coord}`],
+    ['Naver', `https://map.naver.com/p/search/${label}`],
+    ['Kakao', `https://map.kakao.com/link/search/${label}`],
+  ];
+  return `<div class="map-links">${links.map(([name, url]) =>
+    `<a class="map-link" href="${esc(url)}" target="_blank" rel="noopener">${name}</a>`
+  ).join('')}</div>`;
 }
 
 function typeInfoRows(ti, typeId) {
@@ -1196,7 +1393,7 @@ function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.sc
 /* ── TABS ── */
 function switchTab(tab) {
   currentTab = tab;
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['explore','map','chat'][i]===tab));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   const content = document.getElementById('content');
   if (tab === 'chat') {
     document.getElementById('tab-explore').style.display = 'none';
