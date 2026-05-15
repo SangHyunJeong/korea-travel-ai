@@ -1509,10 +1509,10 @@ async function sendChat() {
 function chatErrorMessage(data) {
   const code = data?.code || '';
   if (code === 'ai_not_configured') {
-    return 'AI Guide is not configured yet. Please add the GEMINI_API_KEY secret to the Cloudflare Worker.';
+    return 'AI Guide is not configured yet. Please try again later.';
   }
   if (code === 'ai_invalid_key' || code === 'ai_forbidden') {
-    return 'AI Guide cannot access Gemini right now. Please check the Worker GEMINI_API_KEY permissions.';
+    return 'AI Guide cannot access the AI service right now. Please try again later.';
   }
   if (code === 'ai_quota_exceeded') {
     return 'AI Guide has reached its Gemini quota or rate limit. Please try again later.';
