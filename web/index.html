@@ -391,6 +391,11 @@ header {
 }
 .msg.ai .msg-bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; }
 .msg.user .msg-bubble { background: var(--accent); color: #fff; border-top-right-radius: 4px; }
+.msg-bubble strong { font-weight: 800; }
+.msg-bubble em { font-style: italic; }
+.msg-bubble ul { margin: 6px 0 0 18px; padding: 0; }
+.msg-bubble li { margin: 4px 0; }
+.msg-bubble a { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 
 .typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
 .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); animation: typeBlink 1.2s infinite; }
@@ -1491,13 +1496,49 @@ function addMsg(role, text) {
   avatar.textContent = role === 'user' ? '👤' : '🤖';
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
-  text.split('\n').forEach((line, i) => {
-    if (i > 0) bubble.appendChild(document.createElement('br'));
-    bubble.appendChild(document.createTextNode(line));
-  });
+  bubble.innerHTML = role === 'ai' ? renderChatMarkdown(text) : esc(text).replace(/\n/g, '<br>');
   div.appendChild(avatar); div.appendChild(bubble);
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
+}
+
+function renderChatMarkdown(text) {
+  const lines = String(text || '').split('\n');
+  const html = [];
+  let inList = false;
+  const closeList = () => {
+    if (!inList) return;
+    html.push('</ul>');
+    inList = false;
+  };
+  lines.forEach(line => {
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!inList) {
+        html.push('<ul>');
+        inList = true;
+      }
+      html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
+      return;
+    }
+    closeList();
+    if (!line.trim()) {
+      if (html.length && html[html.length - 1] !== '<br>') html.push('<br>');
+      return;
+    }
+    html.push(renderInlineMarkdown(line), '<br>');
+  });
+  closeList();
+  while (html[html.length - 1] === '<br>') html.pop();
+  return html.join('');
+}
+
+function renderInlineMarkdown(text) {
+  return esc(text)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
 }
 
 function addTyping() {
