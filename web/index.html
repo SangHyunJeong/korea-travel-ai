@@ -1348,9 +1348,13 @@ async function sendChat() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: chatHistory, location: userLocation }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     removeTyping();
-    const reply = data.reply || 'Sorry, I could not respond right now.';
+    if (!res.ok || !data.reply) {
+      addMsg('ai', chatErrorMessage(data));
+      return;
+    }
+    const reply = data.reply;
     addMsg('ai', reply);
     chatHistory.push({ role: 'assistant', content: reply });
     if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
@@ -1359,6 +1363,23 @@ async function sendChat() {
     addMsg('ai', 'Connection error. Please try again.');
   }
   btn.disabled = false;
+}
+
+function chatErrorMessage(data) {
+  const code = data?.code || '';
+  if (code === 'ai_not_configured') {
+    return 'AI Guide is not configured yet. Please add the GEMINI_API_KEY secret to the Cloudflare Worker.';
+  }
+  if (code === 'ai_invalid_key' || code === 'ai_forbidden') {
+    return 'AI Guide cannot access Gemini right now. Please check the Worker GEMINI_API_KEY permissions.';
+  }
+  if (code === 'ai_quota_exceeded') {
+    return 'AI Guide has reached its Gemini quota or rate limit. Please try again later.';
+  }
+  if (code === 'ai_model_unavailable') {
+    return 'AI Guide model is unavailable right now. Please try again later.';
+  }
+  return 'AI Guide is temporarily unavailable. Please try again later.';
 }
 
 function addMsg(role, text) {

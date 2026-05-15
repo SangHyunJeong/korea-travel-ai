@@ -3,6 +3,7 @@
 
 const TOUR_BASE = 'https://apis.data.go.kr/B551011/KorService2';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 const MAX_BODY_BYTES = 32 * 1024;
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_CONTENT_CHARS = 1200;
@@ -45,6 +46,14 @@ class HttpError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;
+  }
+}
+
+class GeminiError extends Error {
+  constructor(status, code, message) {
+    super(message);
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -291,27 +300,28 @@ Safety and scope:
     parts: [{ text: m.content }],
   }));
 
-  const model = 'gemini-2.0-flash';
-  const res = await fetch(
-    `${GEMINI_BASE}/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: geminiMessages,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
-      }),
+  let data;
+  try {
+    data = await callGemini(env, {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: geminiMessages,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 500,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    });
+  } catch (e) {
+    if (e instanceof GeminiError) {
+      return jsonResponse({ error: e.message, code: e.code }, e.status, request, env);
     }
-  );
-
-  const data = await res.json();
-  if (!res.ok) {
-    console.error('Gemini error:', JSON.stringify(data));
-    return jsonResponse({ error: 'AI service error' }, 502, request, env);
+    throw e;
   }
 
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) {
+    return jsonResponse({ error: 'AI service returned an empty response', code: 'ai_empty_response' }, 502, request, env);
+  }
   return jsonResponse({ reply: text }, 200, request, env);
 }
 
@@ -366,20 +376,23 @@ Do not add any explanation.
 Input:
 ${JSON.stringify(Object.fromEntries(nonEmpty))}`;
 
-  const model = 'gemini-2.0-flash';
-  const res = await fetch(
-    `${GEMINI_BASE}/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800 },
-      }),
+  let data;
+  try {
+    data = await callGemini(env, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 800,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    });
+  } catch (e) {
+    if (e instanceof GeminiError) {
+      console.error('Gemini translation unavailable:', e.code);
+      return obj;
     }
-  );
-
-  const data = await res.json();
+    throw e;
+  }
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
   try {
@@ -388,6 +401,67 @@ ${JSON.stringify(Object.fromEntries(nonEmpty))}`;
   } catch {
     return obj;
   }
+}
+
+async function callGemini(env, payload) {
+  const apiKey = String(env?.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
+    throw new GeminiError(503, 'ai_not_configured', 'AI Guide is not configured');
+  }
+
+  let lastError = null;
+  for (const model of GEMINI_MODELS) {
+    let res;
+    let data;
+    try {
+      res = await fetch(`${GEMINI_BASE}/${model}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify(payload),
+      });
+      data = await res.json();
+    } catch (e) {
+      throw new GeminiError(502, 'ai_network_error', 'AI Guide could not reach the AI service');
+    }
+
+    if (res.ok) return data;
+
+    const message = geminiErrorMessage(data);
+    lastError = { status: res.status, model, message };
+    if (!isModelUnavailable(res.status, message)) break;
+  }
+
+  console.error('Gemini error:', JSON.stringify(lastError));
+  throw classifyGeminiError(lastError);
+}
+
+function geminiErrorMessage(data) {
+  return String(data?.error?.message || data?.error || 'Unknown Gemini error');
+}
+
+function isModelUnavailable(status, message) {
+  return status === 404 || (status === 400 && /not found|not supported/i.test(message));
+}
+
+function classifyGeminiError(error) {
+  const status = error?.status || 502;
+  const message = error?.message || 'AI service error';
+  if (status === 400 && /api key|key not valid|invalid/i.test(message)) {
+    return new GeminiError(503, 'ai_invalid_key', 'AI Guide has an invalid API key');
+  }
+  if (status === 401 || status === 403) {
+    return new GeminiError(503, 'ai_forbidden', 'AI Guide is not allowed to use the AI service');
+  }
+  if (status === 404) {
+    return new GeminiError(503, 'ai_model_unavailable', 'AI Guide model is unavailable');
+  }
+  if (status === 429 || /quota|rate limit/i.test(message)) {
+    return new GeminiError(503, 'ai_quota_exceeded', 'AI Guide quota or rate limit was reached');
+  }
+  return new GeminiError(502, 'ai_upstream_error', 'AI Guide is temporarily unavailable');
 }
 
 // ── Intro 타입별 파싱 ─────────────────────────────────────────────
