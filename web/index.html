@@ -676,22 +676,92 @@ const mapItems = new Map();
 const MAP_TILE_CACHE_LIMIT = 160;
 const MAP_ITEM_LIMIT = 360;
 const DESTINATION_ALIASES = {
-  hongdae: '홍대',
-  'hongik university': '홍익대학교',
-  haeundae: '해운대',
-  gyeongbokgung: '경복궁',
-  'gyeongbokgung palace': '경복궁',
-  seongsu: '성수동',
-  'seongsu-dong': '성수동',
-  seongsudong: '성수동',
-  'busan station': '부산역',
+  seoul: '서울',
+  busan: '부산',
+  incheon: '인천',
+  daegu: '대구',
+  daejeon: '대전',
+  gwangju: '광주',
+  ulsan: '울산',
+  sejong: '세종',
+  jeju: '제주',
+  'jeju island': '제주도',
+  suwon: '수원',
+  yongin: '용인',
+  goyang: '고양',
+  paju: '파주',
+  gapyeong: '가평',
+  chuncheon: '춘천',
+  sokcho: '속초',
+  gangneung: '강릉',
+  gyeongju: '경주',
+  jeonju: '전주',
+  yeosu: '여수',
+  suncheon: '순천',
+  tongyeong: '통영',
+  pohang: '포항',
+  andong: '안동',
+  damyang: '담양',
+  boseong: '보성',
+  mokpo: '목포',
+  yongsan: '용산',
+  jongno: '종로',
+  gwanghwamun: '광화문',
+  dongdaemun: '동대문',
   myeongdong: '명동',
   namsan: '남산',
   itaewon: '이태원',
   gangnam: '강남',
+  jamsil: '잠실',
+  'lotte world': '롯데월드',
+  coex: '코엑스',
+  apgujeong: '압구정',
+  sinsa: '신사동',
+  garosugil: '가로수길',
   insadong: '인사동',
   bukchon: '북촌',
+  'bukchon hanok village': '북촌한옥마을',
+  yeonnam: '연남동',
+  mangwon: '망원동',
+  hapjeong: '합정',
+  sinchon: '신촌',
+  ewha: '이화여대',
+  hyehwa: '혜화',
+  daehangno: '대학로',
+  seongsu: '성수동',
+  'seongsu-dong': '성수동',
+  seongsudong: '성수동',
+  hongdae: '홍대',
+  'hongik university': '홍익대학교',
+  'hongik univ': '홍익대학교',
+  'hongdae street': '홍대거리',
+  haeundae: '해운대',
+  'haeundae beach': '해운대해수욕장',
+  gwangalli: '광안리',
+  gwanganli: '광안리',
+  'gwangalli beach': '광안리해수욕장',
+  seomyeon: '서면',
+  jagalchi: '자갈치',
+  'jagalchi market': '자갈치시장',
+  nampo: '남포동',
+  'gamcheon culture village': '감천문화마을',
+  'gamcheon cultural village': '감천문화마을',
+  'biff square': 'BIFF광장',
+  'busan station': '부산역',
+  gyeongbokgung: '경복궁',
+  'gyeongbokgung palace': '경복궁',
+  changdeokgung: '창덕궁',
+  'changdeokgung palace': '창덕궁',
+  deoksugung: '덕수궁',
+  'deoksugung palace': '덕수궁',
+  'n seoul tower': '남산서울타워',
+  'seoul tower': '남산서울타워',
+  'ddp': '동대문디자인플라자',
   'jeju airport': '제주공항',
+  'seongsan ilchulbong': '성산일출봉',
+  'seongsan sunrise peak': '성산일출봉',
+  hallasan: '한라산',
+  'udo island': '우도',
 };
 
 /* ── THEME ── */
@@ -745,15 +815,11 @@ async function searchDestination() {
   const input = document.getElementById('destination-input');
   const keyword = input.value.trim();
   if (!keyword) return;
-  const searchKeyword = normalizeDestinationKeyword(keyword);
+  const searchKeywords = destinationSearchKeywords(keyword);
   const candidatesEl = document.getElementById('destination-candidates');
   candidatesEl.innerHTML = `<div class="destination-candidate"><div class="destination-candidate-title">Finding places...</div></div>`;
   try {
-    const p = new URLSearchParams({ keyword: searchKeyword, numOfRows: 5 });
-    const res = await fetch(`${API_BASE}/api/search?${p}`);
-    if (!res.ok) throw new Error(`Destination search failed: ${res.status}`);
-    const data = await res.json();
-    destinationCandidates = (data.items || []).filter(item => Number.isFinite(Number(item.mapx)) && Number.isFinite(Number(item.mapy)));
+    destinationCandidates = await findDestinationCandidates(searchKeywords);
     renderDestinationCandidates();
     if (!destinationCandidates.length) showToast('No destination candidates found');
   } catch {
@@ -763,9 +829,43 @@ async function searchDestination() {
   }
 }
 
-function normalizeDestinationKeyword(keyword) {
+async function findDestinationCandidates(keywords) {
+  for (const searchKeyword of keywords) {
+    const p = new URLSearchParams({ keyword: searchKeyword, numOfRows: 5 });
+    const res = await fetch(`${API_BASE}/api/search?${p}`);
+    if (!res.ok) throw new Error(`Destination search failed: ${res.status}`);
+    const data = await res.json();
+    const candidates = (data.items || []).filter(item => Number.isFinite(Number(item.mapx)) && Number.isFinite(Number(item.mapy)));
+    if (candidates.length) return candidates;
+  }
+  return [];
+}
+
+function destinationSearchKeywords(keyword) {
   const key = keyword.toLowerCase().trim().replace(/\s+/g, ' ');
-  return DESTINATION_ALIASES[key] || keyword;
+  const withoutKorea = key.replace(/\s*,?\s*(south\s+)?korea$/, '').trim();
+  const compact = withoutKorea.replace(/[-_]/g, ' ').replace(/\s+/g, ' ');
+  const suffixStripped = compact
+    .replace(/\s+(station|stn|terminal|airport|beach|market|palace|village|street|area|district|city)$/, '')
+    .trim();
+  return uniqueKeywords([
+    DESTINATION_ALIASES[key],
+    DESTINATION_ALIASES[withoutKorea],
+    DESTINATION_ALIASES[compact],
+    DESTINATION_ALIASES[suffixStripped],
+    keyword,
+    withoutKorea !== key ? withoutKorea : '',
+    compact !== withoutKorea ? compact : '',
+    suffixStripped !== compact ? suffixStripped : '',
+  ]);
+}
+
+function uniqueKeywords(values) {
+  const seen = new Set();
+  return values
+    .map(v => String(v || '').trim())
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .slice(0, 4);
 }
 
 function renderDestinationCandidates() {
